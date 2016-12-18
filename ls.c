@@ -180,7 +180,10 @@ t_file	**new_file_array(int size)
 	t_file	**ret;
 
 	if (!(ret = (t_file **)ft_memalloc(sizeof(*ret) * size)))
-		return (0);
+	{
+		perror(prog_name);
+		exit(1);
+	}
 	return (ret);
 }
 
@@ -190,23 +193,41 @@ t_file	*new_file(char *target, char *filename)
 	char	*cache;
 
 	if (!(ret = (t_file *)ft_memalloc(sizeof(*ret))))
-		return (0);
+	{
+		perror(prog_name);
+		exit(1);
+	}
 	ret->filename = ft_strdup(filename);
 	ret->full_path = variable_join(3, target, "/", filename);
 	if (!(ret->st_buf = (struct stat *)ft_memalloc(sizeof(*(ret->st_buf)))))
-		return (0);
+	{
+		free(ret);
+		perror(prog_name);
+		exit(1);
+	}
 	lstat(ret->full_path, ret->st_buf);
 	ret->owner = getpwuid(ret->st_buf->st_uid)->pw_name;
 	ret->group = getgrgid(ret->st_buf->st_gid)->gr_name;
 	ret->links = ft_llutoa_base(ret->st_buf->st_nlink, 10);
 	ret->size = ft_llutoa_base(ret->st_buf->st_size, 10);
-	if (time(0) - ret->st_buf->st_mtime > 15724800)
+	if (time(0) - ret->st_buf->st_mtime > 15724800 || time(0) < ret->st_buf->st_mtime - 3600)
 	{
-		cache = ft_strdup(ctime(&(ret->st_buf->st_mtime)) + 4);
-		cache[ft_strlen(cache) - 15] = 0;
-		ret->time_str = variable_join(3, cache, " ", ctime(&(ret->st_buf->st_mtime)) + 19);
-		ret->time_str[ft_strlen(ret->time_str) - 1] = 0;
-		free(cache);
+		if (ft_strlen(ctime(&(ret->st_buf->st_mtime))) > 25)
+		{
+			cache = ft_strdup(ctime(&(ret->st_buf->st_mtime)) + 4);
+			cache[ft_strlen(cache) - 15 - (ft_strlen(ctime(&(ret->st_buf->st_mtime))) - 25)] = 0;
+			ret->time_str = variable_join(3, cache, " ", ctime(&(ret->st_buf->st_mtime)) + 23);
+			ret->time_str[ft_strlen(ret->time_str) - 1] = 0;
+			free(cache);
+		}
+		else
+		{
+			cache = ft_strdup(ctime(&(ret->st_buf->st_mtime)) + 4);
+			cache[ft_strlen(cache) - 15] = 0;
+			ret->time_str = variable_join(3, cache, " ", ctime(&(ret->st_buf->st_mtime)) + 19);
+			ret->time_str[ft_strlen(ret->time_str) - 1] = 0;
+			free(cache);
+		}
 	}
 	else
 	{
@@ -218,14 +239,18 @@ t_file	*new_file(char *target, char *filename)
 
 void	free_file_array(t_file **tab, int size)
 {
-	while (size--)
+	if (size)
 	{
-		free(tab[size]->filename);
-		free(tab[size]->full_path);
-		free(tab[size]->links);
-		free(tab[size]->size);
-		free(tab[size]->st_buf);
-		free(tab[size]->time_str);
+		while (size--)
+		{
+			free(tab[size]->filename);
+			free(tab[size]->full_path);
+			free(tab[size]->links);
+			free(tab[size]->size);
+			free(tab[size]->st_buf);
+			free(tab[size]->time_str);
+			free(tab[size]);
+		}
 	}
 	free(tab);
 }
@@ -384,11 +409,7 @@ void	print_dir(char *target, t_flagobj *flagobj, int print_name)
 		return ;
 	}
 	file_count = count_files(target, ft_hasflag('a', flagobj->flags));
-	if (!(file_array = new_file_array(file_count)))
-	{
-		perror(prog_name);
-		exit(1);
-	}
+	file_array = new_file_array(file_count);
 	i = -1;
 	while ((dir = readdir(d)) != NULL)
 	{
@@ -414,27 +435,18 @@ int		main(int a, char *b[])
 {
 	int			i;
 	char		*cache;
-	DIR			*d;
 	t_flagobj	flagobj;
 	t_file		**file_array;
 	int			file_count;
 	int			f_count;
 	int			print_name;
+	struct stat	st_buf;
 
 	prog_name = b[0];
 	flagobj = ft_getflags(b);
 	(void)a;
 	if (a == flagobj.args_start)
 	{
-		d = opendir(".");
-		if (!d && errno)
-		{
-			cache = variable_join(3, prog_name, ": ", ".");
-			perror(cache);
-			free(cache);
-			return (1);
-		}
-		closedir(d);
 		print_dir(".", &flagobj, 0);
 	}
 	else
@@ -442,12 +454,7 @@ int		main(int a, char *b[])
 		sort_input_name(&(b[flagobj.args_start]), a - flagobj.args_start);
 		file_count = 0;
 		f_count = 0;
-		if (!(file_array = new_file_array(a - flagobj.args_start)))
-		{
-			perror(prog_name);
-			exit(1);
-		}
-		//Loop all files. If its dir, add to one list, else, other list. Then, send one through one list, then the other to other list.
+		file_array = new_file_array(a - flagobj.args_start);
 		i = flagobj.args_start - 1;
 		while (++i < a)
 		{
@@ -459,21 +466,38 @@ int		main(int a, char *b[])
 				free_file_array(file_array, file_count);
 				return (1);
 			}
-			d = opendir(b[i]);
-			if (!d && errno)
+			errno = 0;
+			++f_count;
+			if (ft_hasflag('l', flagobj.flags))
 			{
-				f_count++;
-				if (errno == 20)
-				{
-					file_array[file_count++] = new_file(".", b[i]);
-					continue ;
-				}
+				lstat(b[i], &st_buf);
+			}
+			else
+			{
+				stat(b[i], &st_buf);
+			}
+			if (errno)
+			{
 				cache = variable_join(3, prog_name + get_slash_idx(prog_name), ": ", b[i]);
 				perror(cache);
 				free(cache);
 				continue ;
 			}
-			closedir(d);
+			else if (!S_ISDIR(st_buf.st_mode))
+			{
+				if (*b[i] == '/')
+				{
+					file_array[file_count++] = new_file("", b[i]);
+				}
+				else
+				{
+					file_array[file_count++] = new_file(".", b[i]);
+				}
+			}
+			else
+			{
+				--f_count;
+			}
 		}
 		if (file_count)
 		{
@@ -488,16 +512,26 @@ int		main(int a, char *b[])
 		i = flagobj.args_start - 1;
 		while (++i < a)
 		{
-			d = opendir(b[i]);
-			if (!d && errno)
+			errno = 0;
+			if (ft_hasflag('l', flagobj.flags))
 			{
-				continue ;
+				lstat(b[i], &st_buf);
 			}
-			closedir(d);
-			print_dir(b[i], &flagobj, print_name);
-			if ((a - flagobj.args_start) - ++f_count)
+			else
 			{
-				ft_printf("\n");
+				stat(b[i], &st_buf);
+			}
+			if (errno)
+			{
+				continue;
+			}
+			if (S_ISDIR(st_buf.st_mode))
+			{
+				print_dir(b[i], &flagobj, print_name);
+				if ((a - flagobj.args_start) - ++f_count)
+				{
+					ft_printf("\n");
+				}
 			}
 		}
 	}
