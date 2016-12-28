@@ -11,6 +11,7 @@
 #include <pwd.h>
 #include <time.h>
 #include <limits.h>
+#include <sys/xattr.h>
 
 void	print_dir(char *target, t_flagobj *flagobj, int print_name);
 
@@ -187,6 +188,33 @@ t_file	**new_file_array(int size)
 	return (ret);
 }
 
+char	*blank_padding(int size)
+{
+	char	*ret;
+
+	ret = (ft_strnew(size));
+	ft_memset(ret, ' ', size);
+	return (ret);
+}
+
+void	set_major_minor_size(t_file *ret)
+{
+	char	*cache1;
+	char	*cache2;
+	char	*cache3;
+	char	*cache4;
+
+	cache1 = ft_llutoa_base(major(ret->st_buf->st_rdev), 10);
+	cache2 = blank_padding(3 - ft_strlen(cache1));
+	cache3 = ft_llutoa_base(minor(ret->st_buf->st_rdev), 10);
+	cache4 = blank_padding(3 - ft_strlen(cache3));
+	ret->size = variable_join(5, cache2, cache1, ", ", cache4, cache3);
+	free(cache1);
+	free(cache2);
+	free(cache3);
+	free(cache4);
+}
+
 t_file	*new_file(char *target, char *filename)
 {
 	t_file	*ret;
@@ -209,7 +237,15 @@ t_file	*new_file(char *target, char *filename)
 	ret->owner = getpwuid(ret->st_buf->st_uid)->pw_name;
 	ret->group = getgrgid(ret->st_buf->st_gid)->gr_name;
 	ret->links = ft_llutoa_base(ret->st_buf->st_nlink, 10);
-	ret->size = ft_llutoa_base(ret->st_buf->st_size, 10);
+	if (S_ISBLK(ret->st_buf->st_mode) || S_ISCHR(ret->st_buf->st_mode))
+	{
+		set_major_minor_size(ret);
+	}
+	else
+	{
+		ret->size = ft_llutoa_base(ret->st_buf->st_size, 10);
+	}
+	// printf("%i | %i\n", major(ret->st_buf->st_rdev), minor(ret->st_buf->st_rdev));
 	if (time(0) - ret->st_buf->st_mtime > 15724800 || time(0) < ret->st_buf->st_mtime - 3600)
 	{
 		if (ft_strlen(ctime(&(ret->st_buf->st_mtime))) > 25)
@@ -311,7 +347,7 @@ void	print_file_array(t_file **file_array, int file_count, t_flagobj *flagobj, i
 	{
 		while (++i < file_count)
 		{
-			char *file_type = ft_strnew(10) - 1;
+			char *file_type = ft_strnew(11) - 1;
 			if (S_ISLNK(file_array[i]->st_buf->st_mode))
 			{
 				*(++file_type) = 'l';
@@ -346,15 +382,36 @@ void	print_file_array(t_file **file_array, int file_count, t_flagobj *flagobj, i
 			}
 			*(++file_type) = (file_array[i]->st_buf->st_mode & S_IRUSR) ? 'r' : '-';
 			*(++file_type) = (file_array[i]->st_buf->st_mode & S_IWUSR) ? 'w' : '-';
-			*(++file_type) = (file_array[i]->st_buf->st_mode & S_IXUSR) ? 'x' : '-';
+			if (file_array[i]->st_buf->st_mode & S_ISUID)
+			{
+				*(++file_type) = (file_array[i]->st_buf->st_mode & S_IXUSR) ? 's' : 'S';
+			}
+			else
+			{
+				*(++file_type) = (file_array[i]->st_buf->st_mode & S_IXUSR) ? 'x' : '-';
+			}
 			*(++file_type) = (file_array[i]->st_buf->st_mode & S_IRGRP) ? 'r' : '-';
 			*(++file_type) = (file_array[i]->st_buf->st_mode & S_IWGRP) ? 'w' : '-';
-			*(++file_type) = (file_array[i]->st_buf->st_mode & S_IXGRP) ? 'x' : '-';
+			if (file_array[i]->st_buf->st_mode & S_ISGID)
+			{
+				*(++file_type) = (file_array[i]->st_buf->st_mode & S_IXGRP) ? 's' : 'S';
+			}
+			else
+			{
+				*(++file_type) = (file_array[i]->st_buf->st_mode & S_IXGRP) ? 'x' : '-';
+			}
 			*(++file_type) = (file_array[i]->st_buf->st_mode & S_IROTH) ? 'r' : '-';
 			*(++file_type) = (file_array[i]->st_buf->st_mode & S_IWOTH) ? 'w' : '-';
-			*(++file_type) = (file_array[i]->st_buf->st_mode & S_IXOTH) ? 'x' : '-';
-
-			ft_printf("%s  %*s %-*s  %-*s %*s %s %s", file_type - 9, get_min_wid(file_array, file_count, 0), file_array[i]->links, get_min_wid(file_array, file_count, 1), file_array[i]->owner, get_min_wid(file_array, file_count, 2), file_array[i]->group, get_min_wid(file_array, file_count, 3) + 1, file_array[i]->size, file_array[i]->time_str, file_array[i]->filename);
+			if (file_array[i]->st_buf->st_mode & S_ISVTX)
+			{
+				*(++file_type) = (file_array[i]->st_buf->st_mode & S_IXOTH) ? 't' : 'T';
+			}
+			else
+			{
+				*(++file_type) = (file_array[i]->st_buf->st_mode & S_IXOTH) ? 'x' : '-';
+			}
+			*(++file_type) = (listxattr(file_array[i]->full_path, 0, 0 , 0) > 0) ? '@' : ' ';
+			ft_printf("%s %*s %-*s  %-*s %*s %s %s", file_type - 10, get_min_wid(file_array, file_count, 0), file_array[i]->links, get_min_wid(file_array, file_count, 1), file_array[i]->owner, get_min_wid(file_array, file_count, 2), file_array[i]->group, get_min_wid(file_array, file_count, 3) + 1, file_array[i]->size, file_array[i]->time_str, file_array[i]->filename);
 			if (S_ISLNK(file_array[i]->st_buf->st_mode))
 			{
 				char link_path[PATH_MAX];
@@ -366,7 +423,7 @@ void	print_file_array(t_file **file_array, int file_count, t_flagobj *flagobj, i
 				ft_printf(" -> %s", link_path);
 			}
 			ft_putstr("\n");
-			free (file_type - 9);
+			free (file_type - 10);
 		}
 	}
 	else
@@ -444,7 +501,6 @@ int		main(int a, char *b[])
 
 	prog_name = b[0];
 	flagobj = ft_getflags(b);
-	(void)a;
 	if (a == flagobj.args_start)
 	{
 		print_dir(".", &flagobj, 0);
@@ -475,6 +531,11 @@ int		main(int a, char *b[])
 			else
 			{
 				stat(b[i], &st_buf);
+				if (errno)
+				{
+					errno = 0;
+					lstat(b[i], &st_buf);
+				}
 			}
 			if (errno)
 			{
