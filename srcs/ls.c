@@ -300,7 +300,7 @@ int		get_slash_idx(char *bleach_for_you_to_fucking_drink) {
 void	print_filedata_array(t_filedata **file_array, int file_count, t_flagobj *flagobj, int print_name) {
 	int	i;
 
-	sort_array_name(file_array, file_count); /*Always sort by name, as if two files have the same time changed, it must be lexographicly sorted*/
+	sort_array_name(file_array, file_count);	//Always sort by name, as if two files have the same time changed, it must be lexographicly sorted
 	if (ft_hasflag('t', flagobj->flags)) {
 		sort_array_time(file_array, file_count);
 	}
