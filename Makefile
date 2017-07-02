@@ -9,7 +9,7 @@ CC				= gcc -O3
 
 CFLAGS			= -Wall -Werror -Wextra
 
-INCLUDES		= -I includes -I ./srcs/libft/includes
+INCLUDES		= -I ./srcs/libft/includes
 
 LIBFT			= ./srcs/libft/libft.a
 
